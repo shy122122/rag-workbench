@@ -12,7 +12,7 @@ import config
 from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from rag import clients, logging_setup, pipeline
+from rag import clients, deploy, logging_setup, pipeline
 from rag.errors import StoreCorrupt
 from rag.events import sse
 from rag.store import VectorStore
@@ -22,6 +22,10 @@ STATIC_DIR = BASE / "static"
 
 LOG_PATH = logging_setup.setup(BASE)
 log = logging.getLogger("rag.app")
+
+# 必须在构造 VectorStore 之前补种子库：store 是构造时一次性读盘的，
+# 先建对象再拷文件的话，内存里还是一座空库。
+deploy.seed_kb_if_empty(BASE)
 
 KB = VectorStore(BASE / "data" / "kb")
 
@@ -58,26 +62,45 @@ async def log_requests(request: Request, call_next):
     return response
 
 
+# 后注册的包在外层，所以门禁会先于上面的日志生效：没通过鉴权的请求直接挡在门口。
+# 未设置 DEMO_PASSWORD 时它整个是空转的，本地开发行为不变。
+app.add_middleware(deploy.GateMiddleware)
+
+
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/healthz")
+async def healthz() -> dict:
+    """平台探活用，免鉴权且不碰知识库，避免探活本身把休眠中的实例反复唤醒跑重活。"""
+    return {"ok": True}
+
+
 @app.get("/api/health")
 async def health() -> dict:
-    return {"ok": True, "stats": KB.stats()}
+    return {"ok": True, "stats": KB.stats(), "demo": deploy.enabled()}
 
 
 # ---------------------------------------------------------------- 配置
 @app.get("/api/config")
 async def get_config() -> dict:
-    return {"config": config.load_config(), "has_key": config.has_api_key()}
+    return {"config": config.load_config(), "has_key": config.has_api_key(),
+            "demo": deploy.enabled()}
 
 
 @app.post("/api/config")
 async def post_config(payload: dict) -> dict:
     cfg = config.load_config()
     api_key = payload.get("api_key", "")
+    # 演示环境用环境变量里的 Key，不让访客改写：一个手滑填错的 Key 会让所有人一起用不了。
+    # 参数本身仍然可改——现场演示「调大为召回数看看名次怎么变」正是这工作台想给人看的东西。
+    if api_key and deploy.enabled():
+        return JSONResponse(
+            {"ok": False, "message": "演示环境的 API Key 由服务端托管，不支持在页面修改"},
+            status_code=403,
+        )
     for k in payload:
         if k in config.DEFAULT_CONFIG:
             cfg[k] = payload[k]

@@ -1,0 +1,15 @@
+.git/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 本机知识库和密钥绝不能进镜像
+data/
+.env
+
+# 部署件和测试不必进运行时镜像；examples/ 和 seed/ 要留下，前者是「载入示例」的数据源
+docs/
+tests/
+Dockerfile
+.dockerignore

@@ -1183,6 +1183,13 @@ async function openSettings() {
     const ks = $("key-status");
     ks.textContent = c.has_key ? "已配置" : "未配置";
     ks.className = "badge " + (c.has_key ? "b-good" : "b-bad");
+    // 演示环境 Key 由服务端托管：留着输入框能填、点了却报 403，不如直接说明白
+    $("cfg-key").disabled = !!c.demo;
+    if (c.demo) {
+      $("cfg-key").placeholder = "演示环境由服务端托管，无需填写";
+      ks.textContent = "服务端托管";
+      ks.className = "badge b-good";
+    }
     $("settings-modal").classList.remove("hidden");
   } catch (e) { toast("读取设置失败：" + e.message, true); }
 }

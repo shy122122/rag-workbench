@@ -1,0 +1,24 @@
+# Render Blueprint：在 Render 控制台选「New → Blueprint」指向本仓库即可一键建服务。
+# 真正保密的两个值写 sync: false，部署时由控制台弹窗填入，不会进仓库。
+services:
+  - type: web
+    name: rag-workbench
+    runtime: docker
+    plan: free
+    # 新加坡离国内最近，面试官打开比欧美机房快一截
+    region: singapore
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: DASHSCOPE_API_KEY
+        sync: false
+      - key: DEMO_PASSWORD
+        sync: false
+      - key: DEMO_USER
+        value: demo
+      # 全局每日计费调用上限，防的是 API 额度被吃光
+      - key: DEMO_DAILY_LIMIT
+        value: "200"
+      # 单 IP 每分钟上限，防的是连点
+      - key: DEMO_RATE_PER_MIN
+        value: "20"
