@@ -13,19 +13,35 @@ DEFAULT_CONFIG = {
     "llm_model": "qwen-plus",
     "embedding_model": "text-embedding-v3",
     "dimensions": 1024,
+    "chunk_strategy": "recursive",  # 切分策略：recursive=递归字符切分 / structure=按标题等级切块
+    "structure_level": 2,  # structure 策略下：块边界到第几级标题（1~6）
     "chunk_size": 500,
     "chunk_overlap": 50,
     "top_k": 5,
+    "recall_k": 20,  # 粗排召回数：向量检索先取这么多，再交给 rerank 精排
+    "neighbor_window": 1,  # 邻块扩展：命中块前后各带 n 块一起送进上下文（0=关闭）
+    "rerank_enabled": True,
+    "rerank_model": "gte-rerank-v2",
     "retrieval_min_score": 0.0,  # 相似度阈值：低于此的命中不展示
     "clean_enabled": True,
     "clean_noise": True,
     "clean_dedup": True,
     "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    # DashScope 原生接口，rerank 走这里（OpenAI 兼容模式不含 rerank）
+    "native_base_url": "https://dashscope.aliyuncs.com/api/v1",
 }
 
 # 各字段类型集合：save/load 时把表单提交的字符串矫正回正确类型
-_BOOL_FIELDS = {"clean_enabled", "clean_noise", "clean_dedup"}
-_INT_FIELDS = {"dimensions", "chunk_size", "chunk_overlap", "top_k"}
+_BOOL_FIELDS = {"clean_enabled", "clean_noise", "clean_dedup", "rerank_enabled"}
+_INT_FIELDS = {
+    "dimensions",
+    "structure_level",
+    "chunk_size",
+    "chunk_overlap",
+    "top_k",
+    "recall_k",
+    "neighbor_window",
+}
 _FLOAT_FIELDS = {"retrieval_min_score"}
 
 
@@ -66,16 +82,31 @@ def _fill(merged: dict, src: dict) -> dict:
     return merged
 
 
+_cache: dict = {"mtime": None, "cfg": None}
+
+
 def load_config() -> dict:
-    """读取 config.json；缺失字段补默认值，并把字段矫正为正确类型。"""
+    """读取 config.json；缺失字段补默认值，并把字段矫正为正确类型。
+
+    每个请求都会调用，用 mtime 做缓存，文件没变就不重复解析。
+    """
+    try:
+        mtime = CONFIG_PATH.stat().st_mtime_ns
+    except OSError:
+        mtime = None
+    if _cache["cfg"] is not None and _cache["mtime"] == mtime:
+        return dict(_cache["cfg"])
+
     cfg = _defaults()
-    if CONFIG_PATH.exists():
+    if mtime is not None:
         try:
             data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
             _fill(cfg, data)
         except (json.JSONDecodeError, OSError):
             pass
-    return cfg
+    _cache["mtime"] = mtime
+    _cache["cfg"] = cfg
+    return dict(cfg)
 
 
 def save_config(cfg: dict) -> dict:
@@ -84,6 +115,8 @@ def save_config(cfg: dict) -> dict:
     CONFIG_PATH.write_text(
         json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    _cache["mtime"] = None  # 让下次 load_config 重新读盘
+    _cache["cfg"] = None
     return merged
 
 

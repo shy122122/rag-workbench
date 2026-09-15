@@ -2,8 +2,19 @@
   "llm_model": "qwen-plus",
   "embedding_model": "text-embedding-v3",
   "dimensions": 1024,
+  "chunk_strategy": "recursive",
+  "structure_level": 2,
   "chunk_size": 500,
   "chunk_overlap": 50,
   "top_k": 5,
-  "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  "recall_k": 20,
+  "neighbor_window": 1,
+  "rerank_enabled": true,
+  "rerank_model": "gte-rerank-v2",
+  "retrieval_min_score": 0.0,
+  "clean_enabled": true,
+  "clean_noise": true,
+  "clean_dedup": true,
+  "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "native_base_url": "https://dashscope.aliyuncs.com/api/v1"
 }

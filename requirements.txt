@@ -1,8 +1,10 @@
-fastapi
-uvicorn[standard]
-python-multipart
-openai
-numpy
-pypdf
-python-docx
-python-dotenv
+# 直接依赖，锁定到当前实测可用的版本（2026-09-15）
+# 注意：openai 3.x 依赖的是 httpx2（httpx 的重命名分支），精排用的 HTTP 客户端也走它
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+python-multipart==0.0.32
+openai==3.8.0
+numpy==2.5.2
+pypdf==6.17.0
+python-docx==1.2.0
+python-dotenv==1.2.3

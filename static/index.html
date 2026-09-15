@@ -5,165 +5,532 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>RAG 可视化工作台</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+  <script>
+    /* 主题要在首次绘制前定下来，否则深色用户会先闪一下白屏 */
+    (function () {
+      try {
+        var t = localStorage.getItem("rag.theme");
+        if (t !== "dark" && t !== "light") {
+          t = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) { /* 隐私模式下 localStorage 会抛，忽略即可 */ }
+    })();
+  </script>
   <style>
-    * { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+    /* ============ 设计 token：暖白精密台 ============ */
+    :root {
+      --paper:  #f3f0ea;
+      --panel:  #fdfdfb;
+      --pane2:  #faf7f1;
+      --pane3:  #f4efe6;
+      --line:   #e4ddd0;
+      --line2:  #efe9de;
+      --line-hover: #d5ccbb;
+      --ink:    #27221a;
+      --ink2:   #6b6254;
+      --ink3:   #9d9383;
+      --ink4:   #cfc6b6;
+      --on-ink: #f6f2ea;        /* 深底按钮上的字 */
+      --ink-solid-hover: #14110c;
+      --accent: #24695c;        /* 运行 / 活动 / 链接 */
+      --accent-deep: #1b5046;
+      --accent-soft: #e4efe9;
+      --accent-line: rgba(36, 105, 92, .35);
+      --amber:  #9a6f1d;        /* 检索分数 / 引用 / 阈值 */
+      --amber-soft: #f7ecd7;
+      --good:   #3d7a4e;
+      --good-soft: #e7f0e3;
+      --bad:    #ac3829;
+      --bad-soft: #f8e7e1;
+      --codebg: #242019;        /* 深色 prompt 块 */
+      --codeink:#f2ede2;
+      --tag:    #ebe4d6;        /* 名次标签底 */
+      --track:  #e9e2d4;        /* 分数条轨道 */
+      --dot-pending: #d9d1c1;
+      --dot-stopped: rgba(0, 0, 0, .06);
+      --scroll: #d4ccbc;
+      --sel:    rgba(36, 105, 92, .18);
+      --cite-line: rgba(154, 111, 29, .55);
+      --link-same: rgba(157, 147, 131, .55);
+      --overlay: rgba(33, 28, 20, .45);
+      --glow-top: rgba(255, 255, 255, .85);
+      --shadow-sheet: 0 1px 0 rgba(60, 48, 26, .03), 0 10px 30px -22px rgba(60, 48, 26, .5);
+      --shadow-slot: 0 6px 18px -20px rgba(60, 48, 26, .7);
+    }
+    /* 深色只是换一套同名变量，布局与结构一律不动 */
+    :root[data-theme="dark"] {
+      --paper:  #13110e;
+      --panel:  #1b1814;
+      --pane2:  #201c17;
+      --pane3:  #292420;
+      --line:   #332d25;
+      --line2:  #28231d;
+      --line-hover: #3d362c;
+      --ink:    #ebe4d7;
+      --ink2:   #aea596;
+      --ink3:   #837b6c;
+      --ink4:   #5c5548;
+      --on-ink: #16130f;
+      --ink-solid-hover: #fffaf0;
+      --accent: #64b4a3;
+      --accent-deep: #8ed0c1;
+      --accent-soft: #1a2926;
+      --accent-line: rgba(100, 180, 163, .38);
+      --amber:  #d9ab52;
+      --amber-soft: #2c2517;
+      --good:   #74b183;
+      --good-soft: #1a2a1e;
+      --bad:    #dd7a68;
+      --bad-soft: #2d1d18;
+      --codebg: #0e0c09;
+      --codeink:#e7e0d3;
+      --tag:    #2d2820;
+      --track:  #2c2721;
+      --dot-pending: #3a332a;
+      --dot-stopped: rgba(255, 255, 255, .1);
+      --scroll: #3a342b;
+      --sel:    rgba(100, 180, 163, .22);
+      --cite-line: rgba(217, 171, 82, .55);
+      --link-same: rgba(131, 123, 108, .6);
+      --overlay: rgba(0, 0, 0, .62);
+      --glow-top: rgba(255, 255, 255, .05);
+      --shadow-sheet: 0 1px 0 rgba(0, 0, 0, .3), 0 10px 30px -22px rgba(0, 0, 0, .9);
+      --shadow-slot: 0 6px 18px -20px rgba(0, 0, 0, .9);
+    }
+    * { scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
     ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
-    body { font-family: ui-sans-serif, system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
-    .step-card { transition: opacity .25s ease; }
-    .pipeline-rail { position: relative; }
-    .pipeline-rail .rail-line { position:absolute; left:15px; top:0; bottom:0; width:2px; background:#e2e8f0; }
+    ::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 8px; }
+
+    html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(1100px 340px at 50% -180px, var(--glow-top), transparent 70%),
+        var(--paper);
+    }
+    .mono, .num { font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace; }
+    .num { font-variant-numeric: tabular-nums; }
+    ::selection { background: var(--sel); }
+
+    /* ---- 面板 / 细线分层（弱化卡片堆叠感）---- */
+    .sheet { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+             box-shadow: var(--shadow-sheet); }
+    .hair-b { border-bottom: 1px solid var(--line2); }
+    .hair-t { border-top: 1px solid var(--line2); }
+    .hair   { border: 1px solid var(--line2); }
+
+    /* ---- 标签与排版层级 ---- */
+    .lbl { font-size: 10.5px; letter-spacing: .14em; color: var(--ink3); font-weight: 600; }
+    .lbl-idx { font-family: ui-monospace, Consolas, monospace; letter-spacing: .05em; color: var(--ink4); }
+    .ink2 { color: var(--ink2); } .ink3 { color: var(--ink3); } .ink4 { color: var(--ink4); }
+
+    /* ---- 按钮 ---- */
+    .btn-solid { background: var(--ink); color: var(--on-ink); }
+    .btn-solid:hover:not(:disabled) { background: var(--ink-solid-hover); }
+    .btn-solid:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-ghost { color: var(--ink2); }
+    .btn-ghost:hover:not(:disabled) { color: var(--ink); background: var(--pane3); }
+    .btn-line { border: 1px solid var(--line); background: var(--panel); color: var(--ink2); }
+    .btn-line:hover { color: var(--ink); border-color: var(--line-hover); background: var(--pane2); }
+    .mini-badge { font-size: 10px; letter-spacing: .04em; }
+
+    /* ---- 输入 ---- */
+    .field { border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+             border-radius: 7px; }
+    .field:focus { outline: none; border-color: var(--accent-line);
+                   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
+    .num-in { font-family: ui-monospace, Consolas, monospace; font-variant-numeric: tabular-nums; }
     details > summary { list-style: none; cursor: pointer; }
-    details > summary::-webkit-details-marker { display:none; }
-    details[open] .chev { transform: rotate(90deg); }
-    .chev { transition: transform .15s ease; }
+    details > summary::-webkit-details-marker { display: none; }
+    details[open] .chev, details[open] .chev2 { transform: rotate(90deg); }
+    .chev { transition: transform .14s ease; display: inline-flex; }
+
+    /* ---- 键值元数据行（Stripe 式，替代胶囊堆叠）---- */
+    .kv { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+    .kv .k { font-size: 10px; letter-spacing: .08em; color: var(--ink3); }
+    .kv .v { font-size: 11.5px; color: var(--ink); font-family: ui-monospace, Consolas, monospace;
+             font-variant-numeric: tabular-nums; }
+    .kvs { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; }
+
+    /* ---- 回答内引用 [#n] ---- */
+    .cite { cursor: pointer; color: var(--amber); font-weight: 700; padding: 0 2px;
+            border-bottom: 1px dashed var(--cite-line); transition: background .14s ease; }
+    .cite:hover { background: var(--amber-soft); }
+
+    /* ---- 流程 rail：左竖线 + 信号节点 ---- */
+    .rail { position: relative; }
+    .rail::before { content: ""; position: absolute; left: 9px; top: 8px; bottom: 8px;
+                    width: 1px; background: linear-gradient(var(--line) 60%, transparent); }
+    .srow { position: relative; padding-left: 30px; }
+    .snode { position: absolute; left: 0; top: 14px; width: 19px; height: 19px;
+             display: flex; align-items: center; justify-content: center;
+             background: var(--panel); border-radius: 999px; }
+    .srow + .srow { margin-top: 2px; }
+
+    /* 节点状态 */
+    .nd { width: 11px; height: 11px; border-radius: 999px; transition: all .25s ease; }
+    .st-pending .nd { border: 1.5px solid var(--dot-pending); background: transparent; }
+    .st-pending { opacity: .75; }
+    .st-run   .nd { border: 2px solid var(--accent); border-top-color: transparent; animation: spin 1s linear infinite; }
+    .st-done  .nd { background: var(--good); box-shadow: 0 0 0 3px var(--good-soft); }
+    .st-done.srow-live .nd { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
+                             animation: glow 1.4s ease-in-out infinite; }
+    .st-error .nd { background: var(--bad); box-shadow: 0 0 0 3px var(--bad-soft); }
+    .st-stopped .nd { background: var(--ink4); box-shadow: 0 0 0 3px var(--dot-stopped); }
+    .st-stopped { opacity: .85; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes glow { 0%,100% { box-shadow: 0 0 0 3px var(--accent-soft);}
+                      50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 22%, transparent);} }
+
+    /* 步骤内容卡片（贴 rail 的“抽屉”） */
+    .slot { border-radius: 8px; border: 1px solid transparent; }
+    .slot:hover { background: var(--pane2); }
+    .slot[open] { border-color: var(--line2); background: var(--panel);
+                 box-shadow: var(--shadow-slot); }
+    .slot[open]:hover { background: var(--panel); }
+    .slot[open] summary { border-bottom: 1px solid var(--line2); }
+
+    /* 深色代码块 */
+    .cblock { background: var(--codebg); color: var(--codeink); border-radius: 8px; }
     pre.wrap { white-space: pre-wrap; word-break: break-word; }
     .pre-wrap { white-space: pre-wrap; word-break: break-word; }
-    .mode-tab { transition: all .15s ease; }
-    .mode-tab.active { background:#fff; color:#4f46e5; box-shadow: 0 1px 2px rgba(15,23,42,.08); font-weight:600; }
-    /* 回答里的可点击引用 */
-    .cite { cursor:pointer; color:#4f46e5; font-weight:600; border-radius:.375rem; padding:0 .2rem;
-            background:#eef2ff; transition:background .15s ease; }
-    .cite:hover { background:#c7d2fe; }
+
+    /* ---- 模型回答的 Markdown 排版 ----
+       Tailwind preflight 把标题字号、列表符号、段落间距统统清成了 0，
+       所以这里得按作用域把阅读排版重新给回来，否则渲染出来是一坨没有层级的纯文本。 */
+    .md { font-size: 14px; line-height: 1.75; color: var(--ink); overflow-wrap: anywhere; }
+    .md > *:first-child { margin-top: 0; }
+    .md > *:last-child { margin-bottom: 0; }
+    .md p { margin: .55em 0; }
+    .md h1, .md h2, .md h3, .md h4 { font-weight: 600; line-height: 1.4; margin: 1em 0 .45em; }
+    .md h1 { font-size: 17px; }
+    .md h2 { font-size: 15.5px; padding-bottom: .3em; border-bottom: 1px solid var(--line2); }
+    .md h3 { font-size: 14.5px; }
+    .md h4 { font-size: 14px; color: var(--ink2); }
+    .md ul, .md ol { margin: .5em 0; padding-left: 1.5em; }
+    .md ul { list-style: disc; }
+    .md ul ul { list-style: circle; }
+    .md ol { list-style: decimal; }
+    .md li { margin: .22em 0; }
+    .md li::marker { color: var(--ink3); }
+    .md strong { font-weight: 600; color: var(--ink); }
+    .md del { color: var(--ink3); }
+    .md a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+    .md code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: .88em;
+               background: var(--pane3); border: 1px solid var(--line2); border-radius: 4px;
+               padding: .08em .34em; }
+    .md pre { background: var(--codebg); color: var(--codeink); border-radius: 8px;
+              padding: 10px 12px; margin: .6em 0; overflow-x: auto; }
+    .md pre code { background: none; border: 0; padding: 0; color: inherit; font-size: 12.5px; }
+    .md blockquote { border-left: 3px solid var(--line); margin: .6em 0;
+                     padding: .12em 0 .12em .9em; color: var(--ink2); }
+    .md hr { border: 0; border-top: 1px solid var(--line2); margin: 1em 0; }
+    .md table { width: 100%; border-collapse: collapse; margin: .6em 0; font-size: 13px; }
+    .md th, .md td { border: 1px solid var(--line2); padding: 5px 9px; text-align: left; }
+    .md th { background: var(--pane2); font-weight: 600; }
+    .md img { max-width: 100%; border-radius: 6px; }
+
+    /* 流式光标挂在最后一个块级元素尾巴上，这样重渲染 innerHTML 不会把它冲掉 */
+    .md.streaming > *:last-child::after {
+      content: ""; display: inline-block; width: 2px; height: 1em; vertical-align: text-bottom;
+      background: var(--accent); margin-left: 3px; animation: blink 1s steps(1) infinite; }
+
+    /* ---- 检索命中块 ---- */
+    .hit { border: 1px solid var(--line2); border-radius: 8px; }
+    .hit-hd { background: var(--pane2); }
+    .rank-tag { font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; font-weight: 700;
+                width: 20px; height: 20px; border-radius: 5px; display: inline-flex;
+                align-items: center; justify-content: center; flex: none; }
+    .bar { height: 3px; border-radius: 99px; background: var(--track); overflow: hidden; }
+    .bar > i { display: block; height: 100%; border-radius: 99px; }
+
+    /* ---- 精排：粗排 / 精排 双列排名对照 ---- */
+    .rr-wrap { position: relative; }
+    .rr-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 62px; }
+    .rr-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .rr-row { display: flex; align-items: center; gap: 7px; padding: 5px 8px;
+              border: 1px solid var(--line2); border-radius: 6px; background: var(--panel); }
+    .rr-out { opacity: .40; }
+    .rr-up   { border-color: rgba(61, 122, 78, .45); }
+    .rr-down { border-color: rgba(172, 56, 41, .40); }
+    .rr-links { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+    .rrl { fill: none; stroke-width: 1.4; }
+    .rrl-same { stroke: var(--link-same); }
+    .rrl-up   { stroke: var(--good); stroke-width: 2; }
+    .rrl-down { stroke: var(--bad);  stroke-width: 2; }
+
+    /* ---- 顶部 tab ---- */
+    .tab { color: var(--ink3); font-weight: 500; }
+    .tab:hover { color: var(--ink2); }
+    .tab.on { color: var(--ink); font-weight: 600; }
+    .tab .ub { display: block; height: 2px; margin-top: 7px; border-radius: 2px; background: transparent; }
+    .tab.on .ub { background: var(--accent); }
+
+    /* ---- 模式 chip / 链接 hover ---- */
+    .q-chip { transition: all .14s ease; }
+    .q-chip:hover { border-color: var(--accent-line); color: var(--accent-deep); background: var(--accent-soft); }
+
+    /* ---- 匹配范围：可勾选的文档 chip ---- */
+    .scope-chip {
+      display: inline-flex; align-items: center; gap: .34em; max-width: 100%;
+      padding: .2em .58em; border-radius: 999px; cursor: pointer;
+      border: 1px solid var(--line2); background: var(--paper); color: var(--ink2);
+      font-size: 11.5px; line-height: 1.7; text-align: left;
+      transition: background .12s ease, border-color .12s ease, color .12s ease;
+    }
+    .scope-chip:hover { border-color: var(--line-hover); color: var(--ink); }
+    .scope-chip.on {
+      border-color: var(--accent-line); color: var(--ink);
+      background: color-mix(in srgb, var(--accent) 13%, transparent);
+    }
+    .scope-tick {
+      display: inline-flex; align-items: center; justify-content: center; flex: none;
+      width: 13px; height: 13px; border-radius: 4px;
+      border: 1px solid var(--line); color: transparent;
+    }
+    .scope-chip.on .scope-tick { border-color: var(--accent); color: var(--accent); }
+
     /* 检索块被引用定位时的高亮脉冲 */
     @keyframes rank-flash {
-      0% { box-shadow:0 0 0 0 rgba(245,158,11,.75); }
-      100% { box-shadow:0 0 0 16px rgba(245,158,11,0); }
+      0% { box-shadow: 0 0 0 0 rgba(154, 111, 29, .6); }
+      100% { box-shadow: 0 0 0 14px rgba(154, 111, 29, 0); }
     }
-    .rank-flash { animation: rank-flash .9s ease-out 2; border-color:#f59e0b !important; }
+    .rank-flash { animation: rank-flash .9s ease-out 2; border-color: var(--amber) !important; }
+
+    /* 流式回答光标 */
+    .caret { display: inline-block; width: 2px; height: 1em; vertical-align: text-bottom;
+             background: var(--accent); margin-left: 1px; animation: blink 1s steps(1) infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    /* 拖拽命中态 / dropzone hover */
+    .drop-on { border-color: var(--accent-line) !important; color: var(--accent) !important;
+               background: color-mix(in srgb, var(--accent) 10%, transparent) !important; }
+    #dropzone:hover { border-color: var(--accent-line); color: var(--accent);
+                      background: color-mix(in srgb, var(--accent) 8%, transparent); }
+
+    /* 状态徽标（顶栏 / 弹窗） */
+    .badge { font-size: 10.5px; padding: 2px 8px; border-radius: 99px; letter-spacing: .03em; }
+    .b-good { color: var(--good); background: var(--good-soft); }
+    .b-bad  { color: var(--bad);  background: var(--bad-soft); }
+    .b-amber{ color: var(--amber); background: var(--amber-soft); }
+    .b-ghost{ color: var(--ink3);  border: 1px solid var(--line); background: transparent; }
+
+    /* 主题切换按钮：图标跟着当前主题走，纯 CSS，JS 没跑起来也不至于两个都显示 */
+    :root[data-theme="dark"] .ic-moon { display: none; }
+    :root[data-theme="dark"] .ic-sun  { display: block; }
+
+    /* 知识库数据问题横幅 */
+    .alert { border: 1px solid var(--bad); border-left-width: 3px; border-radius: 8px;
+             background: var(--bad-soft); color: var(--ink); }
+    .alert .alert-t { color: var(--bad); font-weight: 600; }
+
+    /* 轻微入场 */
+    @keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    .rise { animation: rise .28s ease both; }
   </style>
 </head>
-<body class="bg-slate-100 text-slate-800">
+<body>
 
-  <!-- 顶栏 -->
-  <header class="bg-white border-b border-slate-200 sticky top-0 z-20">
-    <div class="max-w-[1500px] mx-auto px-5 h-14 flex items-center gap-4">
-      <div class="flex items-center gap-2.5">
-        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white">
-          <i class="fa fa-bolt"></i>
-        </div>
-        <h1 class="text-lg font-semibold tracking-wide">RAG 可视化工作台</h1>
-        <span class="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100">逐步可见</span>
+  <!-- 顶栏：无彩色，排版型 -->
+  <header class="sticky top-0 z-20 border-b border-[var(--line)]"
+          style="background: color-mix(in srgb, var(--paper) 86%, transparent); backdrop-filter: blur(8px);">
+    <div class="max-w-[1540px] mx-auto px-5 h-14 flex items-center gap-5">
+      <div class="flex items-center gap-3 min-w-0">
+        <!-- 链路符号（pipeline 阶梯） -->
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+             stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="flex-none opacity-90">
+          <path d="M3 19h18"/>
+          <path d="M6 19v-4h5v4"/><path d="M11 19v-4h5v4"/><path d="M16 19v-4h5v4"/>
+          <path d="M6 15V9h5v6"/><path d="M11 9V4h5v5"/><path d="M16 9v-5h5v5"/>
+        </svg>
+        <h1 class="text-[15px] font-semibold tracking-[.02em]">RAG 工作台</h1>
+        <span class="hidden sm:inline mono text-[10px] text-[var(--ink4)] pt-px">rag-workbench · 逐步可视化</span>
       </div>
       <div class="ml-auto flex items-center gap-3">
-        <div id="stat-chip" class="hidden text-xs px-3 py-1.5 rounded-full bg-white border border-slate-200 text-slate-500 mono"></div>
-        <button id="btn-settings" class="inline-flex items-center gap-1.5 text-sm px-3.5 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50">
-          <i class="fa fa-cog"></i> 设置
+        <div id="stat-chip" class="hidden num text-[11px] px-3 py-1 rounded-full border border-[var(--line)] bg-[var(--panel)] text-[var(--ink2)]"></div>
+        <button id="btn-theme" class="inline-flex items-center justify-center w-8 h-8 rounded-md btn-ghost" title="切换深色 / 浅色">
+          <svg class="ic-moon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>
+          </svg>
+          <svg class="ic-sun hidden" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
+          </svg>
+        </button>
+        <button id="btn-settings" class="inline-flex items-center gap-2 text-[13px] px-3 h-8 rounded-md btn-ghost" title="打开设置">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/>
+          </svg>
+          设置
         </button>
       </div>
     </div>
   </header>
 
-  <div class="max-w-[1500px] mx-auto px-5 py-5 grid grid-cols-[340px_1fr] gap-5 items-start">
+  <div class="max-w-[1540px] mx-auto px-5 py-6 grid grid-cols-[346px_minmax(0,1fr)] gap-5 items-start">
 
-    <!-- 左栏：知识库 -->
-    <aside class="space-y-4 sticky top-20">
-      <section class="bg-white rounded-xl border border-slate-200 shadow-sm">
-        <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-          <h2 class="font-semibold text-sm flex items-center gap-2">
-            <i class="fa fa-database text-indigo-500"></i> 知识库
+    <!-- 左栏 -->
+    <aside class="space-y-4 sticky top-[72px]">
+
+      <!-- 01 · 知识库 -->
+      <section class="sheet overflow-hidden">
+        <div class="px-4 py-2.5 hair-b flex items-baseline justify-between">
+          <h2 class="text-[12px] font-semibold flex items-baseline gap-2">
+            <span class="lbl-idx">01</span>
+            <span>知识库</span>
           </h2>
           <div class="flex items-center gap-1">
-            <button id="btn-examples" class="text-xs px-2 py-1 rounded-md bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-100" title="载入内置示例文档">
-              <i class="fa fa-magic"></i> 示例
-            </button>
-            <button id="btn-clear" class="text-xs px-2 py-1 rounded-md bg-rose-50 text-rose-500 hover:bg-rose-100 border border-rose-100" title="清空整个知识库">
-              <i class="fa fa-trash"></i>
+            <button id="btn-examples" class="mini-badge px-2 py-1 rounded-md btn-ghost" title="载入内置示例文档">示例</button>
+            <button id="btn-clear" class="mini-badge px-2 py-1 rounded-md btn-ghost hover:text-[var(--bad)]" title="清空整个知识库">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                <path d="M10 11v6M14 11v6"/>
+              </svg>
             </button>
           </div>
         </div>
 
-        <!-- 上传 -->
-        <div class="p-3 border-b border-slate-100">
-          <label id="dropzone" class="flex flex-col items-center justify-center gap-1.5 py-5 rounded-lg border-2 border-dashed border-slate-200 text-slate-400 hover:border-indigo-300 hover:text-indigo-400 hover:bg-indigo-50/40 cursor-pointer transition-colors">
-            <i class="fa fa-cloud-upload text-2xl"></i>
-            <span class="text-xs">点击选择或拖拽文档（.pdf / .docx / .txt / .md）</span>
-            <span class="text-[10px] text-slate-300">上传后自动：解析 → 清洗 → 切分 → 向量化 → 入库</span>
+        <div class="p-3 hair-b">
+          <label id="dropzone" class="flex flex-col items-center justify-center gap-1.5 py-5 rounded-lg border-[1.5px] border-dashed border-[var(--line)] text-[var(--ink3)] cursor-pointer transition-colors">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 20h16" />
+            </svg>
+            <span class="text-[12px]">点击选择或拖拽文档（.pdf / .docx / .txt / .md）</span>
+            <span class="text-[10px] text-[var(--ink4)]">上传后自动：解析 → 清洗 → 切分 → 向量化 → 入库</span>
             <input id="file-input" type="file" accept=".pdf,.docx,.txt,.md,.markdown" class="hidden" multiple />
           </label>
-          <div id="upload-hint" class="hidden text-xs mt-2 px-2 py-1.5 rounded-md"></div>
+          <div id="upload-hint" class="hidden text-xs mt-2 px-2 py-1.5 rounded-md bg-[var(--pane3)] text-[var(--ink2)]"></div>
         </div>
 
-        <!-- 文档列表 -->
-        <div id="doc-list" class="p-2 max-h-[380px] overflow-y-auto">
-          <div class="text-xs text-slate-400 text-center py-6">
-            <i class="fa fa-inbox fa-lg block mb-2"></i>
-            知识库为空<br/>点击上方「示例」或上传文档开始建库
-          </div>
-        </div>
+        <div id="kb-alert" class="hidden px-3 pb-3"></div>
+        <div id="doc-list" class="p-1.5 max-h-[330px] overflow-y-auto"></div>
       </section>
 
-      <!-- 建库流水 -->
-      <section class="bg-white rounded-xl border border-slate-200 shadow-sm">
-        <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-          <h2 class="font-semibold text-sm flex items-center gap-2">
-            <i class="fa fa-tasks text-emerald-500"></i> 建库流水
+      <!-- 02 · 建库流水 -->
+      <section class="sheet overflow-hidden">
+        <div class="px-4 py-2.5 hair-b flex items-baseline justify-between">
+          <h2 class="text-[12px] font-semibold flex items-baseline gap-2">
+            <span class="lbl-idx">02</span>
+            <span>建库流水</span>
           </h2>
-          <span class="text-[10px] text-slate-400">最近处理记录</span>
+          <span class="lbl">最近处理</span>
         </div>
-        <div id="ingest-log" class="p-3 max-h-[260px] overflow-y-auto text-xs text-slate-400 text-center">
-          暂无记录。上传文档或载入示例后，这里会逐步展示每一步。
+        <div id="ingest-log" class="p-2.5 max-h-[300px] overflow-y-auto text-[12px] text-[var(--ink3)]"></div>
+      </section>
+
+      <!-- 03 · 对话历史 -->
+      <section class="sheet overflow-hidden">
+        <div class="px-4 py-2.5 hair-b flex items-baseline justify-between">
+          <h2 class="text-[12px] font-semibold flex items-baseline gap-2">
+            <span class="lbl-idx">03</span>
+            <span>对话历史</span>
+          </h2>
+          <div class="flex items-center gap-1">
+            <span id="hist-count" class="num text-[10px] text-[var(--ink4)]"></span>
+            <button id="btn-new-chat" class="mini-badge px-2 py-1 rounded-md btn-ghost" title="开始一段新对话（清空上文）">新对话</button>
+          </div>
         </div>
+        <div id="hist-list" class="p-1.5 max-h-[280px] overflow-y-auto"></div>
       </section>
     </aside>
 
     <!-- 主区 -->
-    <main class="space-y-5 min-w-0">
+    <main class="space-y-4 min-w-0">
 
-      <!-- 提问 / 内容匹配 框 -->
-      <section class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-        <div class="flex items-center justify-between gap-3 mb-3">
-          <div class="inline-flex rounded-lg bg-slate-100 p-0.5">
-            <button type="button" data-mode="query" class="mode-tab active px-4 py-1.5 rounded-md text-sm text-slate-500">问答生成</button>
-            <button type="button" data-mode="match" class="mode-tab px-4 py-1.5 rounded-md text-sm text-slate-500">内容匹配</button>
+      <!-- 提问 / 内容匹配 -->
+      <section class="sheet overflow-hidden">
+        <!-- 模式 tab -->
+        <div class="px-4 pt-2.5 flex items-center justify-between gap-3 hair-b">
+          <nav class="flex items-center gap-5">
+            <button type="button" data-mode="query" class="tab on text-[13.5px]">问答生成<span class="ub"></span></button>
+            <button type="button" data-mode="match" class="tab text-[13.5px]">内容匹配<span class="ub"></span></button>
+          </nav>
+          <span id="mode-hint" class="text-[11px] text-[var(--ink4)]"></span>
+        </div>
+
+        <div class="px-4 pt-3">
+          <form id="query-form" class="flex gap-2.5 items-end">
+            <textarea id="q-input" rows="2" autocomplete="off"
+              placeholder="输入问题，例如：RAG 中的 Top-K 是什么？分块策略要注意什么？"
+              class="field flex-1 px-3.5 py-2.5 text-[13.5px] leading-relaxed resize-y"></textarea>
+            <button id="btn-stop" type="button"
+              class="hidden btn-line flex-none inline-flex items-center gap-2 px-4 h-[46px] rounded-lg text-[13.5px] font-medium" title="中断当前流程">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="6" y="6" width="12" height="12" rx="1.5"/>
+              </svg>
+              停止
+            </button>
+            <button id="btn-send" type="submit"
+              class="btn-solid flex-none inline-flex items-center gap-2 px-5 h-[46px] rounded-lg text-[13.5px] font-medium">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12h14M13 6l6 6-6 6"/>
+              </svg>
+              <span id="btn-send-label">提问</span>
+            </button>
+          </form>
+
+          <div class="flex flex-wrap items-center gap-2 mt-3" id="chip-row">
+            <span class="lbl mr-1">试试</span>
+            <button class="q-chip text-[12px] px-2.5 py-1 rounded-full border border-[var(--line)] bg-[var(--panel)] text-[var(--ink2)]">RAG 的 Top-K 是什么</button>
+            <button class="q-chip text-[12px] px-2.5 py-1 rounded-full border border-[var(--line)] bg-[var(--panel)] text-[var(--ink2)]">磷酸铁锂电池有哪些优缺点</button>
+            <button class="q-chip text-[12px] px-2.5 py-1 rounded-full border border-[var(--line)] bg-[var(--panel)] text-[var(--ink2)]">拙政园名字的由来</button>
+            <button class="q-chip text-[12px] px-2.5 py-1 rounded-full border border-[var(--line)] bg-[var(--panel)] text-[var(--ink2)]">如何延长电池寿命</button>
           </div>
-          <span id="mode-hint" class="text-[11px] text-slate-400"></span>
-        </div>
-        <form id="query-form" class="flex gap-3 items-start">
-          <textarea id="q-input" rows="2" autocomplete="off"
-            placeholder="输入问题，例如：RAG 中的 Top-K 是什么？分块策略要注意什么？"
-            class="flex-1 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 text-sm leading-relaxed resize-y"></textarea>
-          <button id="btn-send" type="submit"
-            class="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed">
-            <i class="fa fa-paper-plane"></i><span id="btn-send-label">提问</span>
-          </button>
-        </form>
-        <div class="flex flex-wrap gap-2 mt-3" id="chip-row">
-          <span class="text-xs text-slate-400 self-center">试试：</span>
-          <button class="q-chip text-xs px-2.5 py-1 rounded-full bg-slate-100 hover:bg-indigo-100 text-slate-500 hover:text-indigo-600 border border-transparent hover:border-indigo-200">RAG 的 Top-K 是什么</button>
-          <button class="q-chip text-xs px-2.5 py-1 rounded-full bg-slate-100 hover:bg-indigo-100 text-slate-500 hover:text-indigo-600 border border-transparent hover:border-indigo-200">磷酸铁锂电池有哪些优缺点</button>
-          <button class="q-chip text-xs px-2.5 py-1 rounded-full bg-slate-100 hover:bg-indigo-100 text-slate-500 hover:text-indigo-600 border border-transparent hover:border-indigo-200">拙政园名字的由来</button>
-          <button class="q-chip text-xs px-2.5 py-1 rounded-full bg-slate-100 hover:bg-indigo-100 text-slate-500 hover:text-indigo-600 border border-transparent hover:border-indigo-200">如何延长电池寿命</button>
-        </div>
-        <label id="llm-wrap" class="hidden items-center gap-2 text-xs text-slate-500 mt-3 cursor-pointer">
-          <input type="checkbox" id="with-llm" class="accent-indigo-500" />
-          <span>让模型解读匹配结果与待匹配文本的关系（会额外消耗一次生成调用）</span>
-        </label>
-        <div class="flex flex-wrap items-center gap-x-6 gap-y-2 mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
-          <label class="flex items-center gap-2"><span>Top-K</span>
-            <input id="ctl-topk" type="number" min="1" max="20" value="5"
-              class="mono w-16 px-2 py-1.5 rounded-md border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+
+          <!-- 匹配范围：只在「内容匹配」模式下出现 -->
+          <div id="match-scope" class="hidden mt-3 rounded-lg border border-[var(--line2)] bg-[var(--panel)] overflow-hidden">
+            <div class="px-3 py-2 flex items-center justify-between gap-3 hair-b">
+              <span class="flex items-baseline gap-2 min-w-0">
+                <span class="lbl !tracking-[.05em] !text-[10px] flex-none">匹配范围</span>
+                <span id="scope-count" class="num text-[11px] text-[var(--ink4)] truncate"></span>
+              </span>
+              <span class="flex items-center gap-1.5 flex-none">
+                <button type="button" id="scope-all" class="mini-badge px-2 py-1 rounded-md btn-ghost">全选</button>
+                <button type="button" id="scope-none" class="mini-badge px-2 py-1 rounded-md btn-ghost">全不选</button>
+              </span>
+            </div>
+            <div id="scope-list" class="px-3 py-2 flex flex-wrap gap-1.5 max-h-[132px] overflow-y-auto"></div>
+          </div>
+
+          <label id="llm-wrap" class="hidden items-center gap-2 text-[12px] ink2 mt-3 cursor-pointer">
+            <input type="checkbox" id="with-llm" class="accent-[var(--accent)]" />
+            <span>让模型解读匹配结果与待匹配文本的关系（会额外消耗一次生成调用）</span>
           </label>
-          <label class="flex items-center gap-2"><span>相似度阈值</span>
-            <input id="ctl-mscore" type="number" min="0" max="1" step="0.05" value="0"
-              class="mono w-16 px-2 py-1.5 rounded-md border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
-          </label>
-          <span class="text-[11px] text-slate-400">低于阈值的命中会被过滤；改动即时保存，问答与匹配共用</span>
+
+          <div class="flex flex-wrap items-center gap-x-7 gap-y-1.5 mt-3 pt-2.5 hair-t mb-3 text-[12px] ink2">
+            <label class="flex items-center gap-2.5">
+              <span class="lbl !tracking-[.05em] !text-[10px]">TOP-K</span>
+              <input id="ctl-topk" type="number" min="1" max="20" value="5"
+                class="num-in w-[54px] field px-2 py-1 text-[12px] text-center" />
+            </label>
+            <label class="flex items-center gap-2.5">
+              <span class="lbl !tracking-[.05em] !text-[10px]">相似度阈值</span>
+              <input id="ctl-mscore" type="number" min="0" max="1" step="0.05" value="0"
+                class="num-in w-[54px] field px-2 py-1 text-[12px] text-center" />
+            </label>
+            <span class="text-[11px] text-[var(--ink4)]">低于阈值的命中会被过滤；改动即时保存，问答与匹配共用</span>
+          </div>
         </div>
       </section>
 
-      <!-- 流程流水（问答 / 内容匹配） -->
-      <section id="query-flow" class="bg-white rounded-xl border border-slate-200 shadow-sm">
-        <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
-          <h2 class="font-semibold text-sm flex items-center gap-2">
-            <i class="fa fa-sitemap text-violet-500"></i> <span id="flow-title">问答流水</span>
+      <!-- 问答 / 内容匹配 流水 -->
+      <section id="query-flow" class="sheet overflow-hidden">
+        <div class="px-4 py-2.5 hair-b flex items-center justify-between gap-3">
+          <h2 class="text-[12px] font-semibold flex items-baseline gap-2">
+            <span class="lbl-idx" id="flow-idx">04</span>
+            <span id="flow-title">问答流水</span>
           </h2>
           <div class="flex items-center gap-3 min-w-0">
-            <div id="query-meta" class="text-xs text-slate-400 truncate"></div>
-            <button id="btn-export" class="hidden flex-none text-xs px-2.5 py-1.5 rounded-md bg-slate-100 hover:bg-indigo-100 text-slate-500 hover:text-indigo-600 border border-transparent hover:border-indigo-200" title="把当前流水导出为 Markdown">
-              <i class="fa fa-download"></i> 导出 MD
+            <div id="query-meta" class="num text-[11px] text-[var(--ink4)] truncate"></div>
+            <button id="btn-export" class="hidden flex-none inline-flex items-center gap-1.5 mini-badge px-2.5 py-1 rounded-md btn-ghost" title="把当前流水导出为 Markdown">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 21h16"/>
+              </svg>
+              导出 MD
             </button>
           </div>
         </div>
@@ -173,93 +540,143 @@
   </div>
 
   <!-- 设置弹窗 -->
-  <div id="settings-modal" class="hidden fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-      <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white">
-        <h3 class="font-semibold flex items-center gap-2"><i class="fa fa-cog text-indigo-500"></i> 设置</h3>
-        <button id="btn-close-settings" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+  <div id="settings-modal" class="hidden fixed inset-0 z-50 bg-[var(--overlay)] backdrop-blur-[2px] flex items-center justify-center p-4">
+    <div class="sheet w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
+      <div class="px-5 py-3.5 hair-b flex items-center justify-between sticky top-0 z-10" style="background:var(--panel)">
+        <h3 class="text-[14px] font-semibold">设置</h3>
+        <button id="btn-close-settings" class="text-[var(--ink3)] hover:text-[var(--ink)] text-xl leading-none w-7 h-7 rounded-md hover:bg-[var(--pane3)] flex items-center justify-center">&times;</button>
       </div>
-      <div class="p-5 space-y-4 text-sm">
+
+      <div class="p-5 space-y-5 text-[13px]">
         <div>
-          <label class="flex items-center justify-between text-slate-600 mb-1">
-            <span><i class="fa fa-key text-amber-500 mr-1"></i> 阿里云百炼 API Key</span>
-            <span id="key-status" class="text-xs px-2 py-0.5 rounded-full"></span>
+          <label class="flex items-center justify-between mb-1.5">
+            <span class="text-[13px] font-medium"><span class="lbl mr-2 !tracking-[.08em]">AUTH</span>阿里云百炼 API Key</span>
+            <span id="key-status" class="badge b-ghost"></span>
           </label>
           <input id="cfg-key" type="password" placeholder="sk-… 仅在本地保存，不会上传任何服务器"
-            class="mono w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+            class="num-in field w-full px-3 py-2 text-[13px]" />
           <div class="flex gap-2 mt-2">
-            <button id="btn-test" class="text-xs px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600">测试连接</button>
-            <a class="text-xs self-center text-indigo-500 hover:underline" href="https://bailian.console.aliyun.com/" target="_blank">去百炼控制台获取 →</a>
+            <button id="btn-test" class="mini-badge px-3 h-7 rounded-md btn-line">测试连接</button>
+            <a class="text-[12px] self-center hover:underline" style="color:var(--accent)" href="https://bailian.console.aliyun.com/" target="_blank">去百炼控制台获取 →</a>
           </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label class="text-slate-600 mb-1 block">生成模型</label>
-            <select id="cfg-llm" class="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white">
-              <option>qwen-plus</option><option>qwen-max</option><option>qwen-turbo</option><option>qwen-long</option>
-            </select>
+        <div>
+          <div class="lbl mb-2 !text-[11px] !tracking-[.1em]">模型与向量</div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="text-[12px] ink2 mb-1.5 block">生成模型</label>
+              <select id="cfg-llm" class="field w-full px-3 py-2 text-[13px]">
+                <option>qwen-plus</option><option>qwen-max</option><option>qwen-turbo</option><option>qwen-long</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-[12px] ink2 mb-1.5 block">嵌入模型</label>
+              <select id="cfg-emb" class="field w-full px-3 py-2 text-[13px]">
+                <option>text-embedding-v3</option><option>text-embedding-v4</option>
+              </select>
+            </div>
           </div>
-          <div>
-            <label class="text-slate-600 mb-1 block">嵌入模型</label>
-            <select id="cfg-emb" class="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white">
-              <option>text-embedding-v3</option><option>text-embedding-v4</option>
+          <div class="mt-3">
+            <label class="text-[12px] ink2 mb-1.5 block">向量维度</label>
+            <select id="cfg-dim" class="field w-full px-3 py-2 text-[13px]">
+              <option>1024</option><option>768</option><option>512</option>
             </select>
           </div>
         </div>
 
         <div>
-          <label class="text-slate-600 mb-1 block">向量维度</label>
-          <select id="cfg-dim" class="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white">
-            <option>1024</option><option>768</option><option>512</option>
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-[13px] font-medium"><span class="lbl mr-2 !tracking-[.08em]">CLEAN</span>入库前数据清洗</span>
+            <label class="flex items-center gap-1.5 text-[12px] ink2 cursor-pointer">
+              <input type="checkbox" id="cfg-clean-en" class="accent-[var(--accent)]" /> 启用
+            </label>
+          </div>
+          <div class="hair rounded-lg p-3 space-y-2 mt-1 bg-[var(--pane2)]">
+            <div class="flex items-center justify-between text-[12px] ink2">
+              <span>基础规范化（换行 / 零宽字符 / 空行压缩，始终执行）</span>
+            </div>
+            <label class="flex items-center justify-between text-[12px] ink2 cursor-pointer">
+              <span>剔除页码 / 页眉页脚 / 分隔线</span>
+              <input type="checkbox" id="cfg-clean-noise" class="accent-[var(--accent)]" />
+            </label>
+            <label class="flex items-center justify-between text-[12px] ink2 cursor-pointer">
+              <span>去除全篇重复行（如每页重复的表头）</span>
+              <input type="checkbox" id="cfg-clean-dedup" class="accent-[var(--accent)]" />
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <div class="lbl mb-2 !text-[11px] !tracking-[.1em]">文本切分</div>
+          <label for="cfg-strategy" class="text-[12px] ink2 mb-1.5 block">切分策略</label>
+          <select id="cfg-strategy" class="field w-full px-3 py-2 text-[13px]">
+            <option value="recursive">递归字符切分（按字符，边界优先段落 / 句末标点）</option>
+            <option value="structure">按段落结构（标题等级决定块边界）</option>
+          </select>
+          <p id="strategy-hint" class="text-[11.5px] text-[var(--ink3)] mt-1.5 leading-relaxed"></p>
+        </div>
+        <div id="cfg-level-wrap" class="hidden">
+          <label for="cfg-level" class="text-[12px] ink2 mb-1.5 block">标题等级（块边界切到第几级，如 H2 = 一个二级章节成一块）</label>
+          <select id="cfg-level" class="field w-full px-3 py-2 text-[13px]">
+            <option value="1">H1（一级标题，最粗）</option>
+            <option value="2" selected>H2（二级章节）</option>
+            <option value="3">H3</option>
+            <option value="4">H4</option>
+            <option value="5">H5</option>
+            <option value="6">H6（最细）</option>
           </select>
         </div>
-
-        <div>
-          <div class="flex items-center justify-between mb-1">
-            <span class="text-slate-600 text-sm font-medium"><i class="fa fa-eraser text-sky-500 mr-1"></i> 入库前数据清洗</span>
-            <label class="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
-              <input type="checkbox" id="cfg-clean-en" class="accent-emerald-500" /> 启用
-            </label>
-          </div>
-          <div class="rounded-lg border border-slate-200 p-3 space-y-2 mt-1">
-            <div class="flex items-center justify-between text-slate-500 text-xs">
-              <span><i class="fa fa-check text-emerald-500 mr-1"></i>基础规范化（换行/零宽字符/空行压缩，始终执行）</span>
-            </div>
-            <label class="flex items-center justify-between text-slate-500 text-xs cursor-pointer">
-              <span>剔除页码 / 页眉页脚 / 分隔线</span>
-              <input type="checkbox" id="cfg-clean-noise" class="accent-indigo-500" />
-            </label>
-            <label class="flex items-center justify-between text-slate-500 text-xs cursor-pointer">
-              <span>去除全篇重复行（如每页重复的表头）</span>
-              <input type="checkbox" id="cfg-clean-dedup" class="accent-indigo-500" />
-            </label>
-          </div>
-        </div>
-
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="text-slate-600 mb-1 block">切分大小（字符）</label>
-            <input id="cfg-cs" type="number" min="50" step="10" class="w-full px-3 py-2 rounded-lg border border-slate-200" />
+            <label id="lbl-cs" for="cfg-cs" class="text-[12px] ink2 mb-1.5 block">切分大小（字符）</label>
+            <input id="cfg-cs" type="number" min="50" step="10" class="num-in field w-full px-3 py-2 text-[13px]" />
           </div>
           <div>
-            <label class="text-slate-600 mb-1 block">切分重叠</label>
-            <input id="cfg-co" type="number" min="0" class="w-full px-3 py-2 rounded-lg border border-slate-200" />
+            <label class="text-[12px] ink2 mb-1.5 block">切分重叠</label>
+            <input id="cfg-co" type="number" min="0" class="num-in field w-full px-3 py-2 text-[13px]" />
           </div>
         </div>
-        <p class="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
-          <i class="fa fa-info-circle mr-1"></i>修改切分大小/重叠/嵌入模型或开启数据清洗后，需「清空知识库」并重新建库才会生效。Top-K 与相似度阈值已移至主界面即时调整。
+        <div>
+          <div class="lbl mb-2 !text-[11px] !tracking-[.1em]">检索与精排</div>
+          <div class="hair rounded-lg p-3 space-y-2.5 mt-1 bg-[var(--pane2)]">
+            <label class="flex items-center justify-between text-[12px] ink2 cursor-pointer">
+              <span>启用 rerank 精排（粗排召回后再逐对打分重排）</span>
+              <input type="checkbox" id="cfg-rerank-en" class="accent-[var(--accent)]" />
+            </label>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label for="cfg-rerank-model" class="text-[12px] ink2 mb-1.5 block">精排模型</label>
+                <select id="cfg-rerank-model" class="field w-full px-3 py-2 text-[13px]">
+                  <option>gte-rerank-v2</option><option>gte-rerank</option>
+                </select>
+              </div>
+              <div>
+                <label for="cfg-recall" class="text-[12px] ink2 mb-1.5 block">粗排召回数</label>
+                <input id="cfg-recall" type="number" min="1" max="100" class="num-in field w-full px-3 py-2 text-[13px]" />
+              </div>
+            </div>
+            <div>
+              <label for="cfg-window" class="text-[12px] ink2 mb-1.5 block">邻块扩展窗口（命中块前后各带几块进上下文，0 = 关闭）</label>
+              <input id="cfg-window" type="number" min="0" max="5" class="num-in field w-full px-3 py-2 text-[13px]" />
+            </div>
+          </div>
+        </div>
+
+        <p class="text-[11.5px] leading-relaxed px-3 py-2.5 rounded-lg text-[var(--amber)]" style="background:var(--amber-soft)">
+          修改切分策略 / 大小 / 重叠 / 嵌入模型或开启数据清洗后，需「清空知识库」并重新建库才会生效。<br />
+          Top-K 与相似度阈值在主界面即时调整；精排、召回数、邻块扩展改完即生效，不必重建库。
         </p>
 
         <div class="flex justify-end gap-2 pt-1">
-          <button id="btn-save-settings" class="px-5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500">保存设置</button>
+          <button id="btn-save-settings" class="btn-solid px-5 h-9 rounded-lg text-[13px] font-medium">保存设置</button>
         </div>
       </div>
     </div>
   </div>
 
   <!-- 全局提示 -->
-  <div id="toast" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl bg-slate-800 text-white text-sm shadow-xl"></div>
+  <div id="toast" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-lg text-[13px] shadow-xl" style="background:var(--codebg);color:var(--codeink)"></div>
 
   <script src="/static/app.js"></script>
 </body>
