@@ -30,10 +30,13 @@ rag-workbench/
 │  ├─ events.py        # 步骤事件与 SSE 编码
 │  ├─ logging_setup.py # 统一日志（控制台 + 轮转文件）
 │  ├─ errors.py        # 带中文提示的领域异常
+│  ├─ deploy.py        # 公网演示：访问门禁 / 调用配额 / 示例库自恢复
 │  └─ pipeline.py      # 建库 / 问答 / 内容匹配三条可视化流水线
 ├─ static/             # 前端工作台（index.html + app.js）
-├─ tests/              # pytest：向量库 / 切分 / 清洗 / 请求体边界
+├─ tests/              # pytest：向量库 / 切分 / 清洗 / 请求体边界 / 门禁
 ├─ examples/           # 内置示例文档（一键载入）
+├─ seed/kb/            # 随镜像分发的示例向量库（仅内置文档，公网演示用）
+├─ Dockerfile          # 容器化（含 render.yaml 的 Render Blueprint）
 ├─ data/kb/            # 运行期生成的向量库
 └─ data/logs/          # 运行日志（2MB × 4 轮转）
 ```
@@ -124,6 +127,44 @@ q_embed → retrieve(向量粗排，召回 recall_k 条) → rerank(精排取 to
 
 `data/logs/workbench.log` 记录每一次请求、建库、问答与异常堆栈，
 出问题可以事后追查，不用只靠前端那一眼。
+
+## 公网演示（可选）
+
+本地开发不用管这一节。要把工作台挂到公网给人试，又不想把付费模型额度裸奔出去，
+仓库里带了门禁与配套的容器化部署件：
+
+```bash
+docker build -t rag-workbench .
+docker run -p 8000:8000 \
+  -e DASHSCOPE_API_KEY=sk-xxx \
+  -e DEMO_PASSWORD='换成你自己的密码' \
+  rag-workbench
+```
+
+设了 `DEMO_PASSWORD` 才会启用门禁（HTTP Basic Auth，用户名默认 `demo`），
+不设就整个空转，`uvicorn app:app` 的行为和本地完全一样。
+
+| 环境变量 | 默认 | 作用 |
+| --- | --- | --- |
+| `DEMO_PASSWORD` | 空 | 设了才开门禁；未设 = 不设防 |
+| `DEMO_USER` | `demo` | 登录用户名 |
+| `DEMO_DAILY_LIMIT` | `200` | 全局每日计费调用上限，`0` = 不限 |
+| `DEMO_RATE_PER_MIN` | `20` | 单 IP 每分钟上限，`0` = 不限 |
+
+配额只算真正打百炼的接口（问答、内容匹配、建库/载入示例、测试 Key），
+读配置和列文档不计数，否则访客随便点点就把额度耗光了。每日上限是**全局**的，
+换 IP 也绕不过去——它挡的是「额度被吃光」，不是某个人的手速。
+
+另外两处配套设计：
+
+- 演示模式下 API Key 由服务端环境变量托管，前端输入框置灰、后端也会拒绝写入，
+  免得一个访客手滑填错 Key 让所有人一起用不了；其余参数仍可现场调着玩。
+- `seed/kb/` 是一份只含 `examples/` 内置文档的示例向量库。免费 PaaS 的文件系统
+  不持久，容器一重建 `data/kb` 就空了，启动时检测到空库会自动顶上，
+  免得访客打开看到一座空壳。**已有内容则一字节都不动**，不会覆盖访客上传的文档。
+
+`render.yaml` 是 Render Blueprint，在控制台选「New → Blueprint」指向本仓库即可；
+`DASHSCOPE_API_KEY` 与 `DEMO_PASSWORD` 标了 `sync: false`，由控制台弹窗填入，不进仓库。
 
 ## 常见问题
 
